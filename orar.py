@@ -27,6 +27,7 @@ URL = "https://fcim.utm.md/orar-master-1/"
 DEFAULT_GROUP = "SI-261M"
 _DEFAULT_CACHE_DIR = Path("/tmp") if os.environ.get("VERCEL") else Path(__file__).parent
 CACHE_FILE = _DEFAULT_CACHE_DIR / ".schedule_cache.json"
+BUNDLED_DATA_FILE = Path(__file__).parent / "schedule_data.json"
 CACHE_MAX_AGE_SECONDS = 6 * 3600  # 6 hours
 
 DAYS_RO = ["Luni", "Marți", "Miercuri", "Joi", "Vineri", "Sâmbătă", "Duminică"]
@@ -84,7 +85,15 @@ def fetch_schedule_data(force_refresh: bool = False) -> dict:
 
     req = urllib.request.Request(
         URL,
-        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ScheduleScraper/1.0"},
+        headers={
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/131.0.0.0 Safari/537.36"
+            ),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "ro-RO,ro;q=0.9,en-US;q=0.8,en;q=0.7",
+        },
     )
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
@@ -93,6 +102,8 @@ def fetch_schedule_data(force_refresh: bool = False) -> dict:
         if CACHE_FILE.exists():
             print(f"{Color.YELLOW}[!] Offline / Eroare rețea ({exc}). Se folosește copia locală din cache.{Color.RESET}")
             return json.loads(CACHE_FILE.read_text(encoding="utf-8"))
+        if BUNDLED_DATA_FILE.exists():
+            return json.loads(BUNDLED_DATA_FILE.read_text(encoding="utf-8"))
         raise RuntimeError(f"Nu s-a putut accesa {URL}: {exc}") from exc
 
     # Extract var DATA = {...};

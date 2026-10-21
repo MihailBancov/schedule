@@ -6,6 +6,7 @@ Handles both `/` and `/api/webhook` routes.
 import json
 import os
 import sys
+import traceback
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
@@ -18,19 +19,27 @@ import bot  # noqa: E402
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        """Health check & automatic webhook registration helper (`?setup=1`)."""
+        """Health check, webhook info (`?info=1`), & webhook registration (`?setup=1`)."""
         token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
         if not token:
             self._respond(500, "Missing TELEGRAM_BOT_TOKEN environment variable in Vercel.")
             return
 
         host = self.headers.get("x-forwarded-host") or self.headers.get("host") or ""
+        tb = bot.TelegramBot(token)
+
         if "setup=1" in self.path and host:
             webhook_url = f"https://{host}/api/webhook"
-            tb = bot.TelegramBot(token)
-            res = tb.api_call("setWebhook", {"url": webhook_url})
+            res = tb.api_call("setWebhook", {"url": webhook_url, "drop_pending_updates": False})
             tb.register_commands()
-            self._respond(200, f"Webhook set to {webhook_url}\nResponse: {json.dumps(res)}")
+            info = tb.api_call("getWebhookInfo")
+            self._respond(200, f"Webhook set to {webhook_url}\nsetWebhook: {json.dumps(res)}\ngetWebhookInfo: {json.dumps(info, indent=2)}")
+            return
+
+        if "info=1" in self.path:
+            info = tb.api_call("getWebhookInfo")
+            me = tb.api_call("getMe")
+            self._respond(200, json.dumps({"bot": me.get("result"), "webhook": info.get("result")}, indent=2))
             return
 
         self._respond(
@@ -46,18 +55,24 @@ class handler(BaseHTTPRequestHandler):
             self._respond(500, "Missing TELEGRAM_BOT_TOKEN")
             return
 
-        content_len = int(self.headers.get("Content-Length", 0))
-        raw_body = self.rfile.read(content_len) if content_len > 0 else b"{}"
+        content_len_str = self.headers.get("Content-Length") or self.headers.get("content-length")
+        if content_len_str:
+            raw_body = self.rfile.read(int(content_len_str))
+        else:
+            raw_body = self.rfile.read()
 
         try:
-            upd = json.loads(raw_body.decode("utf-8"))
+            upd = json.loads(raw_body.decode("utf-8") if raw_body else "{}")
             tb = bot.TelegramBot(token)
             if "message" in upd:
                 tb.handle_message(upd["message"])
             elif "callback_query" in upd:
                 tb.handle_callback(upd["callback_query"])
-        except Exception as exc:
-            print(f"[!] Webhook error: {exc}", file=sys.stderr)
+        except Exception:
+            err = traceback.format_exc()
+            print(f"[!] Webhook error:\n{err}", file=sys.stderr)
+            self._respond(200, f"ERR: {err}")
+            return
 
         self._respond(200, "OK")
 

@@ -1,0 +1,6 @@
+.bot_token
+.bot_user_prefs.json
+.schedule_cache.json
+__pycache__/
+*.pyc
+*.ics
